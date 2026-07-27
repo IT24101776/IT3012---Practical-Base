@@ -82,6 +82,10 @@ class VisualGridHuntGame:
             self.food_positions.remove(tuple_pos)
             self.score += 20
 
+        if tuple_pos in self.pos_toxic_traps:
+            self.pos_toxic_traps.remove(tuple_pos)
+            self.score -= 15
+
         for op in self.opponents:
             move = random.choice(['Up', 'Down', 'Left', 'Right', 'Stay'])
             if move == 'Up' and op[1] < self.height - 1:
@@ -161,6 +165,13 @@ class GridGameGUI:
             y1 = (self.env.height - 1 - oy) * self.cell_size + offset
             self.canvas.create_rectangle(x1, y1, x1 + self.cell_size * 0.6, y1 + self.cell_size * 0.6, fill="#990000",
                                          outline="#7a0000")
+
+        for tx, ty in self.env.opponents:
+            offset = self.cell_size * 0.25
+            x1 = ox * self.cell_size + offset
+            y1 = (self.env.height - 1 - ty) * self.cell_size + offset
+            self.canvas.create_rectangle(x1, y1, x1 + self.cell_size * 0.5, y1 + self.cell_size * 0.5, fill="#800080",
+                                         outline="#4B0082")
 
         ax, ay = self.env.agent_pos
         offset = self.cell_size * 0.15
