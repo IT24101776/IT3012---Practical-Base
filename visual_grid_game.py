@@ -39,9 +39,9 @@ class VisualGridHuntGame:
         while len(self.toxic_traps) < 7:
             tx = random.randint(0, self.width - 1)
             ty = random.randint(0, self.height - 1)
-            pos_toxic_traps = [tx, ty]
-            if tuple(pos_toxic_traps) != (0, 0) and tuple(pos_toxic_traps) not in self.walls and tuple(op_pos) not in self.food_positions:
-                seld.toxic_traps.add(pos_toxic_traps)
+            pos_toxic_traps = (tx, ty)
+            if tuple(pos_toxic_traps) != (0, 0) and tuple(pos_toxic_traps) not in self.walls and tuple(pos_toxic_traps) not in self.food_positions:
+                self.toxic_traps.add(pos_toxic_traps)
 
         self.score = 0
         self.steps = 0
