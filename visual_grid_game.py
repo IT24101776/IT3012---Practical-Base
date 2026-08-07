@@ -10,12 +10,13 @@ class VisualGridHuntGame:
         self.width = width
         self.height = height
         self.agent_pos = [0, 0]  # Starting position (x, y)
+        self.facing = 'Up'  # Default heading for local percepts
 
         if custom_walls is not None:
             self.walls = set(custom_walls)
         else:
             # Generate some default scattered walls for a larger grid
-            self.walls = {(2, 2), (2, 3), (5, 5), (6, 5), (3, 7)}
+            self.walls = {(0, 1), (3, 1),(2, 3), (2, 3), (3, 3), (3, 2), (5, 5), (6, 5), (3, 7), (0, 2), (0, 3),(1, 3)}
 
         # Dynamically generate random food positions avoiding walls and agent start
         self.food_positions = set()
@@ -39,23 +40,40 @@ class VisualGridHuntGame:
         while len(self.toxic_traps) < 7:
             tx = random.randint(0, self.width - 1)
             ty = random.randint(0, self.height - 1)
-            pos_toxic_traps = [tx, ty]
-            if tuple(pos_toxic_traps) != (0, 0) and tuple(pos_toxic_traps) not in self.walls and tuple(op_pos) not in self.food_positions:
-                seld.toxic_traps.add(pos_toxic_traps)
+            pos_toxic_traps = (tx, ty)
+            if tuple(pos_toxic_traps) != (0, 0) and tuple(pos_toxic_traps) not in self.walls and tuple(pos_toxic_traps) not in self.food_positions:
+                self.toxic_traps.add(pos_toxic_traps)
 
         self.score = 0
         self.steps = 0
         self.collision = False
 
     def get_percept(self) -> dict:
+        x, y = self.agent_pos
+        if self.facing == 'Up':
+            next_pos = (x, y + 1)          # no clamping — can go out of bounds
+        elif self.facing == 'Down':
+            next_pos = (x, y - 1)
+        elif self.facing == 'Left':
+            next_pos = (x - 1, y)
+        else:  # Right
+            next_pos = (x + 1, y)
+
+        ahead_x, ahead_y = next_pos
+        in_bounds = 0 <= ahead_x < self.width and 0 <= ahead_y < self.height
+        wall_ahead = not in_bounds or next_pos in self.walls
+        food_here = in_bounds and next_pos in self.food_positions
+
         return {
-            'wall_ahead': True/False,
-            'food_here' : True/False,
-            'toxin_here' : True/ False
+            'wall_ahead': wall_ahead,
+            'food_here': food_here,
         }
 
     def execute_action(self, action: str):
         self.steps += 1
+        if action in {'Up', 'Down', 'Left', 'Right'}:
+            self.facing = action
+
         new_pos = list(self.agent_pos)
 
         if action == 'Up':
@@ -77,8 +95,8 @@ class VisualGridHuntGame:
             self.food_positions.remove(tuple_pos)
             self.score += 20
 
-        if tuple_pos in self.pos_toxic_traps:
-            self.pos_toxic_traps.remove(tuple_pos)
+        if tuple_pos in self.toxic_traps:
+            self.toxic_traps.remove(tuple_pos)
             self.score -= 15
 
         for op in self.opponents:
@@ -161,12 +179,22 @@ class GridGameGUI:
             self.canvas.create_rectangle(x1, y1, x1 + self.cell_size * 0.6, y1 + self.cell_size * 0.6, fill="#990000",
                                          outline="#7a0000")
 
-        for tx, ty in self.env.opponents:
-            offset = self.cell_size * 0.25
-            x1 = ox * self.cell_size + offset
+        for tx, ty in self.env.toxic_traps:
+            offset = self.cell_size * 0.15
+
+            x1 = tx * self.cell_size + offset
             y1 = (self.env.height - 1 - ty) * self.cell_size + offset
-            self.canvas.create_rectangle(x1, y1, x1 + self.cell_size * 0.5, y1 + self.cell_size * 0.5, fill="#800080",
-                                         outline="#4B0082")
+
+            size = self.cell_size * 0.7
+
+            self.canvas.create_polygon(
+                x1 + size/2, y1,          # top
+                x1, y1 + size,            # bottom left
+                x1 + size, y1 + size,     # bottom right
+                fill="red",
+                outline="darkred",
+                width=2
+            )
 
         ax, ay = self.env.agent_pos
         offset = self.cell_size * 0.15
