@@ -93,6 +93,43 @@ class ModelBasedAgent:
 class SearchAgent:
     """A problem-solving agent that searches a grid for a goal."""
 
+    def __init__(self):
+        self.plan = []
+        self.active_algo = 'BFS'
+
+    def sense_and_act(self, percept):
+        if not self.plan:
+            current_position = tuple(percept['agent_pos'])
+            food_positions = [tuple(food) for food in percept.get('all_food', [])]
+
+            if not food_positions:
+                return 'Up'
+
+            goal_position = min(
+                food_positions,
+                key=lambda food: abs(food[0] - current_position[0])
+                + abs(food[1] - current_position[1]),
+            )
+            walls = {tuple(wall) for wall in percept.get('walls', [])}
+            grid_size = percept['grid_size']
+
+            search_methods = {
+                'BFS': self.bfs_search,
+                'DFS': self.dfs_search,
+                'UCS': self.ucs_search,
+            }
+            if self.active_algo not in search_methods:
+                raise ValueError(f'Unknown search algorithm: {self.active_algo}')
+
+            self.plan = search_methods[self.active_algo](
+                current_position, goal_position, walls, grid_size
+            ) or []
+
+            if not self.plan:
+                return 'Up'
+
+        return self.plan.pop(0)
+
     def _neighbors(self, position, walls, grid_size):
         directions = {
             'Up': (0, 1),
