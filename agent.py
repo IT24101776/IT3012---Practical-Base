@@ -1,4 +1,9 @@
 # agent.py
+
+from collections import deque
+import heapq
+import random
+
 class GreedyGridAgent:
     """A simple agent that tries to move around systematically to clear the grid."""
 
@@ -84,3 +89,82 @@ class ModelBasedAgent:
  
         self.last_action = action
         return action
+
+class SearchAgent:
+    """A problem-solving agent that searches a grid for a goal."""
+
+    def _neighbors(self, position, walls, grid_size):
+        directions = {
+            'Up': (0, 1),
+            'Down': (0, -1),
+            'Left': (-1, 0),
+            'Right': (1, 0),
+        }
+
+        for action, (dx, dy) in directions.items():
+            next_position = (position[0] + dx, position[1] + dy)
+            inside_grid = (
+                0 <= next_position[0] < grid_size[0]
+                and 0 <= next_position[1] < grid_size[1]
+            )
+            if inside_grid and next_position not in walls:
+                yield action, next_position
+
+    def bfs_search(self, start_pos, goal_pos, walls, grid_size):
+        queue = deque([(start_pos, [])])
+        reached = {start_pos}
+
+        while queue:
+            current_position, path = queue.popleft()
+            if current_position == goal_pos:
+                return path
+
+            for action, next_position in self._neighbors(
+                current_position, walls, grid_size
+            ):
+                if next_position not in reached:
+                    reached.add(next_position)
+                    queue.append((next_position, path + [action]))
+
+        return None
+
+    def dfs_search(self, start_pos, goal_pos, walls, grid_size):
+        stack = [(start_pos, [])]
+        reached = {start_pos}
+
+        while stack:
+            current_position, path = stack.pop()
+            if current_position == goal_pos:
+                return path
+
+            neighbors = list(self._neighbors(current_position, walls, grid_size))
+            for action, next_position in reversed(neighbors):
+                if next_position not in reached:
+                    reached.add(next_position)
+                    stack.append((next_position, path + [action]))
+
+        return None
+
+    def ucs_search(self, start_pos, goal_pos, walls, grid_size):
+        frontier = [(0, 0, start_pos, [])]
+        reached = {start_pos: 0}
+        sequence = 1
+
+        while frontier:
+            path_cost, _, current_position, path = heapq.heappop(frontier)
+            if current_position == goal_pos:
+                return path
+
+            for action, next_position in self._neighbors(
+                current_position, walls, grid_size
+            ):
+                new_cost = path_cost + 1
+                if next_position not in reached or new_cost < reached[next_position]:
+                    reached[next_position] = new_cost
+                    heapq.heappush(
+                        frontier,
+                        (new_cost, sequence, next_position, path + [action]),
+                    )
+                    sequence += 1
+
+        return None
