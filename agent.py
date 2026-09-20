@@ -2,6 +2,7 @@
 
 from collections import deque
 import heapq
+import math
 import random
 
 class GreedyGridAgent:
@@ -86,7 +87,7 @@ class ModelBasedAgent:
             # Open path ahead: keep going the way we were already heading,
             # or start moving if this is the very first decision.
             action = self.last_action if self.last_action else 'Up'
- 
+
         self.last_action = action
         return action
 
@@ -96,6 +97,14 @@ class SearchAgent:
     def __init__(self):
         self.plan = []
         self.active_algo = 'BFS'
+
+    def manhattan_distance(self, pos, goal):
+        """Calculates Manhattan distance h(n) = |x1 - x2| + |y1 - y2|."""
+        return abs(pos[0] - goal[0]) + abs(pos[1] - goal[1])
+
+    def euclidean_distance(self, pos, goal):
+        """Calculates Euclidean distance h(n) = sqrt((x1 - x2)^2 + (y1 - y2)^2)."""
+        return math.sqrt((pos[0] - goal[0]) ** 2 + (pos[1] - goal[1]) ** 2)
 
     def sense_and_act(self, percept):
         if not self.plan:
@@ -117,13 +126,19 @@ class SearchAgent:
                 'BFS': self.bfs_search,
                 'DFS': self.dfs_search,
                 'UCS': self.ucs_search,
+                'AStar': self.astar_search,
             }
-            if self.active_algo not in search_methods:
-                raise ValueError(f'Unknown search algorithm: {self.active_algo}')
 
-            self.plan = search_methods[self.active_algo](
-                current_position, goal_position, walls, grid_size
-            ) or []
+            if self.active_algo == 'AStar':
+                self.plan = self.astar_search(
+                    current_position, goal_position, walls, grid_size
+                ) or []
+            elif self.active_algo in search_methods:
+                self.plan = search_methods[self.active_algo](
+                    current_position, goal_position, walls, grid_size
+                ) or []
+            else:
+                raise ValueError(f'Unknown search algorithm: {self.active_algo}')
 
             if not self.plan:
                 return 'Up'
@@ -205,3 +220,38 @@ class SearchAgent:
                     sequence += 1
 
         return None
+
+    def astar_search(self, start_pos, goal_pos, walls, grid_size, heuristic_type='manhattan'):
+        if heuristic_type == 'euclidean':
+            h_start = self.euclidean_distance(start_pos, goal_pos)
+        else:
+            h_start = self.manhattan_distance(start_pos, goal_pos)
+
+        frontier = [(h_start, 0, start_pos, [])]
+        reached_states = set()
+
+        while frontier:
+            f_cost, g_cost, current_pos, path_taken = heapq.heappop(frontier)
+
+            if current_pos == goal_pos:
+                return path_taken
+
+            if current_pos in reached_states:
+                continue
+
+            reached_states.add(current_pos)
+
+            for action, next_pos in self._neighbors(current_pos, walls, grid_size):
+                if next_pos not in reached_states:
+                    g_new = g_cost + 1
+                    if heuristic_type == 'euclidean':
+                        h_new = self.euclidean_distance(next_pos, goal_pos)
+                    else:
+                        h_new = self.manhattan_distance(next_pos, goal_pos)
+                    f_new = g_new + h_new
+                    heapq.heappush(
+                        frontier, (f_new, g_new, next_pos, path_taken + [action])
+                    )
+
+        return None
+None
