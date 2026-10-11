@@ -1,6 +1,7 @@
 # agent.py
 
 from collections import deque
+from logic_engine import KnowledgeBase
 import heapq
 import math
 import random
@@ -97,6 +98,13 @@ class SearchAgent:
     def __init__(self):
         self.plan = []
         self.active_algo = 'BFS'
+        self.kb = KnowledgeBase()
+        self.kb.tell_rule(
+            ['TargetVisible', 'HasDust'], 'SafeToEngage'
+        )
+        self.kb.tell_rule(
+            ['SafeToEngage', 'BloodseekerMissing'], 'Retreat'
+        )
 
     def manhattan_distance(self, pos, goal):
         """Calculates Manhattan distance h(n) = |x1 - x2| + |y1 - y2|."""
@@ -110,18 +118,25 @@ class SearchAgent:
         if not self.plan:
             current_position = tuple(percept['agent_pos'])
             food_positions = [tuple(food) for food in percept.get('all_food', [])]
+            walls = {tuple(wall) for wall in percept.get('walls', [])}
+            grid_size = percept['grid_size']
+            tile_facts = {
+                (1, 0): ['TargetVisible', 'HasDust', 'BloodseekerMissing'],
+                (0, 1): ['TargetVisible', 'HasDust'],
+            }
+            for position, facts in percept.get('tile_facts', {}).items():
+                tile_facts.setdefault(tuple(position), []).extend(facts)
 
             if not food_positions:
-                return 'Up'
+                return self._fallback_action(
+                    current_position, walls, grid_size, tile_facts
+                )
 
             goal_position = min(
                 food_positions,
                 key=lambda food: abs(food[0] - current_position[0])
                 + abs(food[1] - current_position[1]),
             )
-            walls = {tuple(wall) for wall in percept.get('walls', [])}
-            grid_size = percept['grid_size']
-
             search_methods = {
                 'BFS': self.bfs_search,
                 'DFS': self.dfs_search,
@@ -131,21 +146,53 @@ class SearchAgent:
 
             if self.active_algo == 'AStar':
                 self.plan = self.astar_search(
-                    current_position, goal_position, walls, grid_size
+                    current_position,
+                    goal_position,
+                    walls,
+                    grid_size,
+                    tile_facts=tile_facts,
                 ) or []
             elif self.active_algo in search_methods:
                 self.plan = search_methods[self.active_algo](
-                    current_position, goal_position, walls, grid_size
+                    current_position,
+                    goal_position,
+                    walls,
+                    grid_size,
+                    tile_facts=tile_facts,
                 ) or []
             else:
                 raise ValueError(f'Unknown search algorithm: {self.active_algo}')
 
             if not self.plan:
-                return 'Up'
+                return self._fallback_action(
+                    current_position, walls, grid_size, tile_facts
+                )
 
         return self.plan.pop(0)
 
-    def _neighbors(self, position, walls, grid_size):
+    def _unsafe_tiles(self, tile_facts):
+        unsafe_tiles = set()
+        for position, facts in tile_facts.items():
+            self.kb.clear_facts()
+            for fact in facts:
+                self.kb.tell_fact(fact)
+            self.kb.forward_chain()
+            if 'Retreat' in self.kb.facts:
+                unsafe_tiles.add(tuple(position))
+        self.kb.clear_facts()
+        return unsafe_tiles
+
+    def _fallback_action(self, position, walls, grid_size, tile_facts):
+        if tile_facts is None:
+            return 'Up'
+
+        unsafe_tiles = self._unsafe_tiles(tile_facts)
+        safe_neighbors = self._neighbors(
+            position, walls, grid_size, unsafe_tiles
+        )
+        return next((action for action, _ in safe_neighbors), None)
+
+    def _neighbors(self, position, walls, grid_size, unsafe_tiles=None):
         directions = {
             'Up': (0, 1),
             'Down': (0, -1),
@@ -159,10 +206,15 @@ class SearchAgent:
                 0 <= next_position[0] < grid_size[0]
                 and 0 <= next_position[1] < grid_size[1]
             )
-            if inside_grid and next_position not in walls:
+            if (
+                inside_grid
+                and next_position not in walls
+                and (unsafe_tiles is None or next_position not in unsafe_tiles)
+            ):
                 yield action, next_position
 
-    def bfs_search(self, start_pos, goal_pos, walls, grid_size):
+    def bfs_search(self, start_pos, goal_pos, walls, grid_size, tile_facts=None):
+        unsafe_tiles = self._unsafe_tiles(tile_facts or {})
         queue = deque([(start_pos, [])])
         reached = {start_pos}
 
@@ -172,7 +224,7 @@ class SearchAgent:
                 return path
 
             for action, next_position in self._neighbors(
-                current_position, walls, grid_size
+                current_position, walls, grid_size, unsafe_tiles
             ):
                 if next_position not in reached:
                     reached.add(next_position)
@@ -180,7 +232,8 @@ class SearchAgent:
 
         return None
 
-    def dfs_search(self, start_pos, goal_pos, walls, grid_size):
+    def dfs_search(self, start_pos, goal_pos, walls, grid_size, tile_facts=None):
+        unsafe_tiles = self._unsafe_tiles(tile_facts or {})
         stack = [(start_pos, [])]
         reached = {start_pos}
 
@@ -189,7 +242,9 @@ class SearchAgent:
             if current_position == goal_pos:
                 return path
 
-            neighbors = list(self._neighbors(current_position, walls, grid_size))
+            neighbors = list(
+                self._neighbors(current_position, walls, grid_size, unsafe_tiles)
+            )
             for action, next_position in reversed(neighbors):
                 if next_position not in reached:
                     reached.add(next_position)
@@ -197,7 +252,8 @@ class SearchAgent:
 
         return None
 
-    def ucs_search(self, start_pos, goal_pos, walls, grid_size):
+    def ucs_search(self, start_pos, goal_pos, walls, grid_size, tile_facts=None):
+        unsafe_tiles = self._unsafe_tiles(tile_facts or {})
         frontier = [(0, 0, start_pos, [])]
         reached = {start_pos: 0}
         sequence = 1
@@ -208,7 +264,7 @@ class SearchAgent:
                 return path
 
             for action, next_position in self._neighbors(
-                current_position, walls, grid_size
+                current_position, walls, grid_size, unsafe_tiles
             ):
                 new_cost = path_cost + 1
                 if next_position not in reached or new_cost < reached[next_position]:
@@ -221,7 +277,16 @@ class SearchAgent:
 
         return None
 
-    def astar_search(self, start_pos, goal_pos, walls, grid_size, heuristic_type='manhattan'):
+    def astar_search(
+        self,
+        start_pos,
+        goal_pos,
+        walls,
+        grid_size,
+        heuristic_type='manhattan',
+        tile_facts=None,
+    ):
+        tile_facts = tile_facts or {}
         if heuristic_type == 'euclidean':
             h_start = self.euclidean_distance(start_pos, goal_pos)
         else:
@@ -243,6 +308,13 @@ class SearchAgent:
 
             for action, next_pos in self._neighbors(current_pos, walls, grid_size):
                 if next_pos not in reached_states:
+                    self.kb.clear_facts()
+                    for fact in tile_facts.get(next_pos, []):
+                        self.kb.tell_fact(fact)
+                    self.kb.forward_chain()
+                    if 'Retreat' in self.kb.facts:
+                        continue
+
                     g_new = g_cost + 1
                     if heuristic_type == 'euclidean':
                         h_new = self.euclidean_distance(next_pos, goal_pos)
